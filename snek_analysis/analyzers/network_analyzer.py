@@ -411,4 +411,100 @@ class NetworkAnalyzer:
         Returns:
             True if IP is malicious
         """
-        # This is a placeholder - in production,
+        # This is a placeholder - in production, integrate with threat intelligence
+        # For now, check against some known malicious IPs
+        known_malicious = [
+            '185.130.5.253',  # Example C2
+            '94.102.61.78',   # Example C2
+            '5.61.37.39'      # Example C2
+        ]
+        
+        if ip in known_malicious:
+            return True
+        
+        # Check if IP is in suspicious ranges
+        for start, end in self.MALICIOUS_IP_RANGES:
+            if self._ip_in_range(ip, start, end):
+                return True
+        
+        return False
+    
+    def _ip_in_range(self, ip: str, start: str, end: str) -> bool:
+        """
+        Check if IP is within a range
+        
+        Args:
+            ip: IP address
+            start: Start of range
+            end: End of range
+            
+        Returns:
+            True if IP is in range
+        """
+        try:
+            ip_int = int(ipaddress.ip_address(ip))
+            start_int = int(ipaddress.ip_address(start))
+            end_int = int(ipaddress.ip_address(end))
+            return start_int <= ip_int <= end_int
+        except ValueError:
+            return False
+    
+    def _is_potential_beacon(self, conn: Dict[str, Any], 
+                           connections: List[Dict[str, Any]]) -> bool:
+        """
+        Detect potential beaconing activity
+        
+        Args:
+            conn: Connection dictionary
+            connections: List of all connections
+            
+        Returns:
+            True if beaconing detected
+        """
+        pid = conn.get('pid')
+        if not pid:
+            return False
+        
+        # Count connections from this process to the same IP
+        same_ip = [
+            c for c in connections 
+            if c.get('pid') == pid and c.get('remote_ip') == conn.get('remote_ip')
+        ]
+        
+        # Look for regular intervals (simplified)
+        if len(same_ip) >= 10:
+            # Check if connection timestamps are roughly regular
+            timestamps = [c.get('timestamp', 0) for c in same_ip if c.get('timestamp')]
+            if len(timestamps) >= 5:
+                intervals = []
+                for i in range(1, len(timestamps)):
+                    if timestamps[i] and timestamps[i-1]:
+                        intervals.append(timestamps[i] - timestamps[i-1])
+                
+                if intervals:
+                    avg_interval = sum(intervals) / len(intervals)
+                    # Check if intervals are consistent (within 20% variance)
+                    variance = max(intervals) - min(intervals)
+                    if variance < (avg_interval * 0.2):
+                        return True
+        
+        return False
+    
+    def _calculate_risk_level(self, score: int) -> str:
+        """
+        Calculate risk level based on score
+        
+        Args:
+            score: Risk score (0-100)
+            
+        Returns:
+            Risk level string
+        """
+        if score >= 70:
+            return 'CRITICAL'
+        elif score >= 50:
+            return 'HIGH'
+        elif score >= 30:
+            return 'MEDIUM'
+        else:
+            return 'LOW'
